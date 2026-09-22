@@ -11,6 +11,23 @@ import { readAxisLabels } from '../vision/ocr';
 import type { AxisLabel } from '../vision/priceAxis';
 import { defaultAxisStrip, defaultPlotRegion, type RasterImage, type Rect } from '../vision/raster';
 import { resolveAxis, type ManualPoint } from './calibration';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  UploadCloud,
+  Calendar,
+  ScanText,
+  MousePointerClick,
+  Sparkles,
+  Download,
+  FileSpreadsheet,
+  AlertCircle,
+  CheckCircle2,
+  SlidersHorizontal,
+} from 'lucide-react';
 
 interface Props {
   timeframe: Timeframe;
@@ -139,95 +156,232 @@ export function ChartPanel({ timeframe, layers, showResolved, projected, onResul
   };
 
   return (
-    <section>
-      <div className="row">
-        <input type="file" accept="image/*" onChange={onFile} />
-      </div>
+    <div className="space-y-3">
+      {/* Upload Drop Area Card */}
+      <Card className="border-border/80 bg-card/70 backdrop-blur-sm">
+        <CardContent className="p-4">
+          <label className="flex flex-col items-center justify-center border-2 border-dashed border-border/80 hover:border-primary/60 rounded-lg p-6 cursor-pointer bg-muted/20 hover:bg-muted/40 transition-all text-center group">
+            <UploadCloud className="size-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
+            <span className="text-xs font-semibold text-foreground">
+              {image ? 'Replace screenshot image' : `Upload ${timeframe.toUpperCase()} TradingView screenshot`}
+            </span>
+            <span className="text-[11px] text-muted-foreground mt-0.5">
+              PNG or JPEG with clear candlesticks and price axis
+            </span>
+            <input type="file" accept="image/*" onChange={onFile} className="hidden" />
+          </label>
+        </CardContent>
+      </Card>
 
       {image && region && (
-        <>
-          <fieldset>
-            <legend>1. Last candle</legend>
-            <div className="row">
-              <label>
-                {isDaily ? 'Date' : 'Date and time'} of the right-most candle
-                <input
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Step 1: Last Candle Time */}
+          <Card className="border-border/80 bg-card/70">
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
+                <Calendar className="size-3.5 text-primary" />
+                <span>1. Last Candle Time</span>
+              </CardTitle>
+              <CardDescription className="text-[11px]">
+                Required for accurate session time alignment
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 space-y-2.5 text-xs">
+              <div>
+                <label className="text-[11px] text-muted-foreground block mb-1">
+                  {isDaily ? 'Date' : 'Date & Time'} of right-most bar:
+                </label>
+                <Input
                   type={isDaily ? 'date' : 'datetime-local'}
                   value={isDaily ? settings.lastCandleLocal.slice(0, 10) : settings.lastCandleLocal}
                   onChange={(e) => set('lastCandleLocal', isDaily ? `${e.target.value}T00:00` : e.target.value)}
+                  className="h-8 text-xs font-mono"
                 />
-              </label>
-              {!isDaily && (
-                <label>
-                  Chart UTC offset (hours)
-                  <input type="number" step="0.5" value={settings.utcOffsetHours} onChange={(e) => set('utcOffsetHours', Number(e.target.value))} />
-                </label>
-              )}
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend>2. Price axis</legend>
-            <div className="row">
-              <button onClick={readAxis} disabled={busy}>{busy ? 'Reading…' : 'Read price axis (OCR)'}</button>
-              <button onClick={() => setPicking((p) => !p)}>{picking ? 'Stop clicking' : 'Or click 2 points on the chart'}</button>
-            </div>
-            {manualPoints.map((point, i) => (
-              <div className="row" key={point.y}>
-                <label>
-                  Price at line {i + 1} (row {point.y})
-                  <input
-                    value={point.price}
-                    placeholder="1.34250"
-                    onChange={(e) => setManualPoints((pts) => pts.map((p, j) => (j === i ? { ...p, price: e.target.value } : p)))}
-                  />
-                </label>
               </div>
-            ))}
-            <div className="status">{calibration.note}</div>
-          </fieldset>
 
-          <fieldset>
-            <legend>3. Candle detection</legend>
-            <div className="row">
-              <label>
-                Colours
-                <select value={settings.colorMode} onChange={(e) => set('colorMode', e.target.value as Settings['colorMode'])}>
-                  <option value="auto">Automatic (green / red)</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              {settings.colorMode === 'custom' && (
-                <>
-                  <label>Up <input type="color" value={settings.upColor} onChange={(e) => set('upColor', e.target.value)} /></label>
-                  <label>Down <input type="color" value={settings.downColor} onChange={(e) => set('downColor', e.target.value)} /></label>
-                </>
+              {!isDaily && (
+                <div>
+                  <label className="text-[11px] text-muted-foreground block mb-1">
+                    Chart UTC offset (hours):
+                  </label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={settings.utcOffsetHours}
+                    onChange={(e) => set('utcOffsetHours', Number(e.target.value))}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
               )}
-            </div>
-            <div className="row">
-              Search region (px):
-              {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
-                <label key={edge}>
-                  {edge}
-                  <input type="number" value={region[edge]} onChange={(e) => setEdge(edge, Number(e.target.value))} />
-                </label>
-              ))}
-            </div>
-          </fieldset>
+            </CardContent>
+          </Card>
 
-          <div className="row">
-            <button onClick={analyze}>Analyze chart</button>
-            {result && <button onClick={exportPng}>Download annotated PNG</button>}
-            {result && <button onClick={exportCsv}>Download candles CSV</button>}
-          </div>
-        </>
+          {/* Step 2: Price Axis Calibration */}
+          <Card className="border-border/80 bg-card/70">
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
+                <ScanText className="size-3.5 text-primary" />
+                <span>2. Price Axis Calibration</span>
+              </CardTitle>
+              <CardDescription className="text-[11px]">
+                Automatic OCR or manual 2-point mapping
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 space-y-2 text-xs">
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={readAxis}
+                  disabled={busy}
+                  className="gap-1 text-[11px] h-7 flex-1"
+                >
+                  <ScanText className="size-3" />
+                  <span>{busy ? 'Reading…' : 'Read Axis (OCR)'}</span>
+                </Button>
+                <Button
+                  variant={picking ? 'active' : 'outline'}
+                  size="sm"
+                  onClick={() => setPicking((p) => !p)}
+                  className="gap-1 text-[11px] h-7 flex-1"
+                >
+                  <MousePointerClick className="size-3" />
+                  <span>{picking ? 'Stop Clicking' : 'Pick 2 Points'}</span>
+                </Button>
+              </div>
+
+              {manualPoints.map((point, i) => (
+                <div key={point.y} className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground font-mono">P{i + 1} (y={point.y}):</span>
+                  <Input
+                    value={point.price}
+                    placeholder="e.g. 1.34250"
+                    onChange={(e) =>
+                      setManualPoints((pts) =>
+                        pts.map((p, j) => (j === i ? { ...p, price: e.target.value } : p)),
+                      )
+                    }
+                    className="h-7 text-xs font-mono flex-1"
+                  />
+                </div>
+              ))}
+
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                {calibration.note}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Step 3: Detection Parameters & Actions */}
+          <Card className="border-border/80 bg-card/70">
+            <CardHeader className="p-3 pb-2">
+              <CardTitle className="text-xs font-semibold flex items-center gap-1.5">
+                <SlidersHorizontal className="size-3.5 text-primary" />
+                <span>3. Detection & Run</span>
+              </CardTitle>
+              <CardDescription className="text-[11px]">
+                Candle color classification & execution
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 space-y-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Colors:</span>
+                <Select
+                  value={settings.colorMode}
+                  onChange={(e) => set('colorMode', e.target.value as Settings['colorMode'])}
+                  className="h-7 text-xs flex-1"
+                >
+                  <option value="auto">Automatic (Green/Red)</option>
+                  <option value="custom">Custom Palette</option>
+                </Select>
+              </div>
+
+              {settings.colorMode === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    Up: <input type="color" value={settings.upColor} onChange={(e) => set('upColor', e.target.value)} className="h-6 w-6 rounded border cursor-pointer" />
+                  </label>
+                  <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    Down: <input type="color" value={settings.downColor} onChange={(e) => set('downColor', e.target.value)} className="h-6 w-6 rounded border cursor-pointer" />
+                  </label>
+                </div>
+              )}
+
+              <div className="grid grid-cols-4 gap-1 text-[10px] text-muted-foreground pt-1">
+                {(['left', 'top', 'right', 'bottom'] as const).map((edge) => (
+                  <div key={edge}>
+                    <span className="capitalize">{edge}:</span>
+                    <Input
+                      type="number"
+                      value={region[edge]}
+                      onChange={(e) => setEdge(edge, Number(e.target.value))}
+                      className="h-6 px-1 text-[10px] font-mono"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-1 flex flex-wrap gap-1.5">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={analyze}
+                  className="w-full gap-1.5 h-8 font-semibold"
+                >
+                  <Sparkles className="size-3.5" />
+                  <span>Analyze Screenshot</span>
+                </Button>
+
+                {result && (
+                  <div className="flex gap-1.5 w-full mt-1">
+                    <Button variant="outline" size="sm" onClick={exportPng} className="flex-1 h-7 text-[11px]">
+                      <Download className="size-3 mr-1" />
+                      <span>PNG</span>
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={exportCsv} className="flex-1 h-7 text-[11px]">
+                      <FileSpreadsheet className="size-3 mr-1" />
+                      <span>CSV</span>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
-      {error && <div className="status error">{error}</div>}
-      {result?.warnings.map((w) => <div className="status warn" key={w}>{w}</div>)}
-      {result && <div className="status">{result.candles.length} candles reconstructed and analysed.</div>}
+      {/* Status / Alert Messages */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
+      )}
 
-      <canvas ref={canvasRef} className={picking ? 'picking' : undefined} onClick={pickPoint} />
-    </section>
+      {result?.warnings.map((w) => (
+        <Alert variant="warning" key={w}>
+          <AlertCircle className="size-4" />
+          <AlertDescription className="text-xs">{w}</AlertDescription>
+        </Alert>
+      ))}
+
+      {result && (
+        <Alert variant="success">
+          <CheckCircle2 className="size-4" />
+          <AlertDescription className="text-xs font-medium">
+            Successfully reconstructed and analyzed {result.candles.length} candles.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Screenshot & Overlays Canvas */}
+      <Card className="border-border/80 overflow-hidden bg-card/60">
+        <canvas
+          ref={canvasRef}
+          className={`w-full block select-none ${picking ? 'cursor-crosshair' : 'cursor-default'}`}
+          onClick={pickPoint}
+        />
+      </Card>
+    </div>
   );
 }

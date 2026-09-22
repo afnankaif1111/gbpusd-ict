@@ -6,6 +6,20 @@ import type { CandleBox, ChartGeometry } from '../pipeline/geometry';
 import type { LayerVisibility } from '../render/layers';
 import { renderOverlay } from '../render/overlay';
 import type { Candle, Timeframe } from '../types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import {
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Sun,
+  Moon,
+  Download,
+  FileSpreadsheet,
+  TrendingUp,
+  TrendingDown,
+} from 'lucide-react';
 
 interface Props {
   candles: readonly Candle[];
@@ -192,11 +206,11 @@ export function InteractiveChart({
       geometryData;
 
     // Background & Palette
-    const bg = isDark ? '#131722' : '#ffffff';
-    const axisBg = isDark ? '#1e222d' : '#f0f3fa';
-    const gridColor = isDark ? '#242835' : '#e6e9ef';
-    const textColor = isDark ? '#848e9c' : '#5d606b';
-    const borderColor = isDark ? '#2a2e39' : '#d1d4dc';
+    const bg = isDark ? '#0f172a' : '#ffffff';
+    const axisBg = isDark ? '#1e293b' : '#f8fafc';
+    const gridColor = isDark ? '#1e293b' : '#f1f5f9';
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+    const borderColor = isDark ? '#334155' : '#e2e8f0';
     const bullColor = '#089981';
     const bearColor = '#f23645';
 
@@ -208,7 +222,7 @@ export function InteractiveChart({
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     ctx.fillStyle = textColor;
-    ctx.font = '10px system-ui, sans-serif';
+    ctx.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
 
     const priceStep = (maxPrice - minPrice) / numPriceTicks;
@@ -338,7 +352,7 @@ export function InteractiveChart({
         const tagText = lastCandle.close >= 100 ? lastCandle.close.toFixed(2) : lastCandle.close.toFixed(5);
         ctx.fillRect(plotRight, lastY - 8, width - plotRight, 16);
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 10px system-ui, sans-serif';
+        ctx.font = 'bold 10px monospace, system-ui, sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(tagText, plotRight + 6, lastY + 3);
         ctx.restore();
@@ -349,7 +363,7 @@ export function InteractiveChart({
     if (mousePos && mousePos.x >= plotLeft && mousePos.x <= plotRight && mousePos.y >= plotTop && mousePos.y <= plotBottom) {
       ctx.save();
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = isDark ? '#758696' : '#9598a1';
+      ctx.strokeStyle = isDark ? '#64748b' : '#94a3b8';
       ctx.lineWidth = 1;
 
       // Vertical line
@@ -367,17 +381,17 @@ export function InteractiveChart({
       // Price indicator on right axis
       const hoveredPrice = geometryData.priceAtY(mousePos.y);
       const priceText = hoveredPrice >= 100 ? hoveredPrice.toFixed(2) : hoveredPrice.toFixed(5);
-      ctx.fillStyle = isDark ? '#363c4e' : '#4c525e';
+      ctx.fillStyle = isDark ? '#334155' : '#475569';
       ctx.fillRect(plotRight, mousePos.y - 9, width - plotRight, 18);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'left';
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = '10px monospace, system-ui, sans-serif';
       ctx.fillText(priceText, plotRight + 6, mousePos.y + 3);
 
       // Time indicator on bottom axis
       if (hoverIndex !== null && candles[hoverIndex]) {
         const timeText = formatFullTime(candles[hoverIndex].time);
-        ctx.fillStyle = isDark ? '#363c4e' : '#4c525e';
+        ctx.fillStyle = isDark ? '#334155' : '#475569';
         const textW = ctx.measureText(timeText).width + 12;
         ctx.fillRect(mousePos.x - textW / 2, plotBottom, textW, height - plotBottom);
         ctx.fillStyle = '#ffffff';
@@ -468,51 +482,128 @@ export function InteractiveChart({
   const isUp = priceChange >= 0;
 
   return (
-    <div className={`interactive-chart-wrapper ${isDark ? 'theme-dark' : 'theme-light'}`} ref={containerRef}>
+    <Card className="overflow-hidden border-border/80 shadow-md bg-card/60 backdrop-blur-sm" ref={containerRef}>
       {/* Chart Top Header & HUD */}
-      <div className="chart-header">
-        <div className="chart-title-hud">
-          <span className="symbol-label">{symbol}</span>
-          <span className="tf-badge">{timeframe.toUpperCase()}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/60 bg-muted/30">
+        {/* HUD: Symbol, Timeframe & Candlestick Metrics */}
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-sm tracking-tight text-foreground">{symbol}</span>
+            <Badge variant="accent" className="font-mono text-[10px] px-1.5 py-0 h-4 uppercase">
+              {timeframe}
+            </Badge>
+          </div>
+
           {activeCandle && (
-            <div className="hud-values">
-              <span>O: <b>{formatPrice(activeCandle.open)}</b></span>
-              <span>H: <b>{formatPrice(activeCandle.high)}</b></span>
-              <span>L: <b>{formatPrice(activeCandle.low)}</b></span>
-              <span>C: <b>{formatPrice(activeCandle.close)}</b></span>
-              <span className={`change-pill ${isUp ? 'bull' : 'bear'}`}>
-                {isUp ? '+' : ''}
-                {formatPrice(priceChange)} ({isUp ? '+' : ''}
-                {percentChange.toFixed(2)}%)
+            <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
+              <span>
+                O: <b className="text-foreground">{formatPrice(activeCandle.open)}</b>
               </span>
+              <span>
+                H: <b className="text-foreground">{formatPrice(activeCandle.high)}</b>
+              </span>
+              <span>
+                L: <b className="text-foreground">{formatPrice(activeCandle.low)}</b>
+              </span>
+              <span>
+                C: <b className="text-foreground">{formatPrice(activeCandle.close)}</b>
+              </span>
+              <Badge
+                variant={isUp ? 'bullish' : 'bearish'}
+                className="gap-1 font-mono text-[10px] h-4.5 px-1.5"
+              >
+                {isUp ? <TrendingUp className="size-2.5" /> : <TrendingDown className="size-2.5" />}
+                <span>
+                  {isUp ? '+' : ''}
+                  {formatPrice(priceChange)} ({isUp ? '+' : ''}
+                  {percentChange.toFixed(2)}%)
+                </span>
+              </Badge>
             </div>
           )}
         </div>
 
         {/* Chart View Controls */}
-        <div className="chart-controls">
-          <button title="Zoom in" onClick={() => setPitch((p) => Math.min(60, p * 1.25))}>+</button>
-          <button title="Zoom out" onClick={() => setPitch((p) => Math.max(3, p * 0.8))}>−</button>
-          <button title="Reset view" onClick={() => { setPanOffset(0); setPitch(10); }}>Reset</button>
-          <button title="Toggle Dark/Light theme" onClick={() => setIsDark((d) => !d)}>
-            {isDark ? '☀️ Light' : '🌙 Dark'}
-          </button>
-          <button title="Export PNG" onClick={handleExportPng}>PNG</button>
-          <button title="Export CSV" onClick={handleExportCsv}>CSV</button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 border-border/60"
+            title="Zoom in"
+            onClick={() => setPitch((p) => Math.min(60, p * 1.25))}
+          >
+            <ZoomIn className="size-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 border-border/60"
+            title="Zoom out"
+            onClick={() => setPitch((p) => Math.max(3, p * 0.8))}
+          >
+            <ZoomOut className="size-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[11px] border-border/60"
+            title="Reset chart view"
+            onClick={() => {
+              setPanOffset(0);
+              setPitch(10);
+            }}
+          >
+            <RotateCcw className="size-3 mr-1" />
+            <span>Reset</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 border-border/60"
+            title="Toggle Theme"
+            onClick={() => setIsDark((d) => !d)}
+          >
+            {isDark ? <Sun className="size-3.5 text-amber-400" /> : <Moon className="size-3.5 text-sky-400" />}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[11px] border-border/60"
+            title="Export chart as PNG"
+            onClick={handleExportPng}
+          >
+            <Download className="size-3 mr-1" />
+            <span>PNG</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[11px] border-border/60"
+            title="Export candlestick data as CSV"
+            onClick={handleExportCsv}
+          >
+            <FileSpreadsheet className="size-3 mr-1" />
+            <span>CSV</span>
+          </Button>
         </div>
       </div>
 
       {/* Chart Canvas */}
       <canvas
         ref={canvasRef}
-        className={`chart-canvas ${isDragging ? 'grabbing' : 'grab'}`}
+        className={`w-full block select-none ${isDragging ? 'cursor-grabbing' : 'cursor-crosshair'}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
       />
-    </div>
+    </Card>
   );
 }
 

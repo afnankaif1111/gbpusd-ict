@@ -1,0 +1,280 @@
+================================================================================
+ICT ENGINE -> N8N WORKFLOW INTERMEDIATE NODES ARCHITECTURE & SPECIFICATION
+================================================================================
+Created: 2026-09-22
+Associated Asset: plan/image.jpg (and plan/n8n_ict_workflow.jpg)
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE OVERVIEW
+--------------------------------------------------------------------------------
+This document outlines the architecture for integrating ICT (Inner Circle Trader)
+technical analysis modules into an n8n-style node-based workflow application.
+
+In this architecture, candlestick market data (OHLCV) enters via a trigger node
+and flows through multiple intermediate transformation and detection nodes.
+Each intermediate node evaluates specific institutional order flow footprints,
+enriches the data stream, and passes it forward to a confluence validator before
+dispatching trade execution or alert webhooks.
+
+--------------------------------------------------------------------------------
+2. WORKFLOW GRAPH ARCHITECTURE
+--------------------------------------------------------------------------------
+Visual reference: See plan/image.jpg
+
+Flow Topology:
+
+  [Market Data Ingest]
+          │
+          ├───► [ICT Market Structure (BOS & CHoCH)] ─────────────┐
+          │                                                       │
+          ├───► [ICT Fair Value Gap (FVG BISI/SIBI)] ───────┐     │
+          │                                                 ▼     ▼
+          ├───► [ICT Liquidity & Sweeps (BSL/SSL)] ───► [Killzone & Sessions]
+          │                                                 │     │
+          └───► [ICT Order Block Detector] ─────────────────┤     │
+                                                            ▼     ▼
+                                                   [Dealing Range (Prem/Disc)]
+                                                                  │
+                                                                  ▼
+                                                       [Confluence Validator]
+                                                                  │
+                                                                  ▼
+                                                      [Webhook / Telegram Alert]
+
+--------------------------------------------------------------------------------
+3. INTERMEDIATE NODE SPECIFICATIONS
+--------------------------------------------------------------------------------
+
+Node 1: Market Data Ingest (Trigger / Source)
+- Purpose: Polls or receives live OHLCV candle streams (e.g., 1m, 5m, 15m, 1h).
+- Input: Webhook event or Cron timer.
+- Output JSON Schema:
+  {
+    "symbol": "BTCUSDT",
+    "timeframe": "15m",
+    "candles": [
+      { "time": 1726992000, "open": 63000, "high": 63200, "low": 62900, "close": 63150, "volume": 120 }
+    ]
+  }
+
+Node 2: ICT Market Structure Node
+- Logic: Identifies swing highs/lows based on multi-candle lookback. Evaluates
+  Break of Structure (BOS) indicating trend continuation, and Change of
+  Character (CHoCH) indicating trend reversal.
+- Core functions: findSwings(), findStructure()
+- Output JSON Schema additions:
+  {
+    "trend": "bullish" | "bearish" | "neutral",
+    "structureBreaks": [
+      { "type": "bos" | "choch", "direction": "bullish" | "bearish", "price": 63200, "index": 48 }
+    ],
+    "lastSwingHigh": { "price": 63450, "index": 42 },
+    "lastSwingLow": { "price": 62800, "index": 35 }
+  }
+
+Node 3: ICT Fair Value Gap (FVG) Node
+- Logic: Scans 3-candle sequences for price imbalances:
+  - Bullish FVG (BISI): Candle 1 High < Candle 3 Low
+  - Bearish FVG (SIBI): Candle 1 Low > Candle 3 High
+  Tracks mitigation state ('unmitigated', 'partially_filled', 'filled') and
+  calculates Consequent Encroachment (50% midpoint).
+- Core functions: detectFairValueGaps(), atrSeries()
+- Output JSON Schema additions:
+  {
+    "fvgs": [
+      {
+        "type": "bullish" | "bearish",
+        "top": 63120,
+        "bottom": 63050,
+        "midpoint": 63085,
+        "startIndex": 45,
+        "status": "unmitigated" | "partially_filled" | "filled"
+      }
+    ]
+  }
+
+Node 4: ICT Liquidity & Sweeps Node
+- Logic: Locates Buy-Side Liquidity (BSL) and Sell-Side Liquidity (SSL) pools,
+  equal highs/lows (EQH/EQL), and flags candles that pierce these levels with wicks
+  before closing back inside (liquidity run / sweep).
+- Core functions: detectLiquidityPools(), detectSweeps()
+- Output JSON Schema additions:
+  {
+    "liquidityPools": [
+      { "type": "bsl" | "ssl", "price": 63500, "indices": [20, 34], "sweptAt": null }
+    ],
+    "recentSweeps": [
+      { "type": "ssl_sweep", "price": 62800, "candleIndex": 52, "sweepHigh": 62750 }
+    ]
+  }
+
+Node 5: ICT Order Block Detector Node
+- Logic: Finds the highest down-close candle before a bullish displacement that
+  breaks market structure (Bullish OB), or lowest up-close candle before a bearish
+  displacement (Bearish OB). Checks if price has returned to mitigate the zone.
+- Core functions: detectOrderBlocks()
+- Output JSON Schema additions:
+  {
+    "orderBlocks": [
+      {
+        "direction": "bullish" | "bearish",
+        "top": 62920,
+        "bottom": 62860,
+        "index": 41,
+        "state": "unmitigated" | "mitigated" | "invalidated"
+      }
+    ]
+  }
+
+Node 6: Killzone & Session Filter Node
+- Logic: Maps UTC timestamp to New York Eastern Time. Evaluates whether the current
+  bar is within institutional liquidity windows:
+  - Asian Range: 20:00 - 00:00 NY
+  - London Open: 02:00 - 05:00 NY
+  - NY AM Open: 07:00 - 10:00 NY
+  - NY PM: 13:30 - 16:00 NY
+  Also flags Judas Swings (false fakeout breakouts at session open).
+- Core functions: detectSessions(), detectJudasSwings()
+- Output JSON Schema additions:
+  {
+    "currentSession": "NY_AM",
+    "inKillzone": true,
+    "activeJudasSwing": null
+  }
+
+Node 7: Dealing Range (Premium vs. Discount) Node
+- Logic: Establishes the current dealing range between significant swing high
+  and swing low. Calculates Equilibrium (0.50).
+  - Premium Zone (> 0.50): High probability for Short entries.
+  - Discount Zone (< 0.50): High probability for Long entries.
+  - OTE (Optimal Trade Entry): 0.618 - 0.786 retracement.
+- Core functions: computeDealingRange()
+- Output JSON Schema additions:
+  {
+    "dealingRange": {
+      "high": 63500,
+      "low": 62800,
+      "equilibrium": 63150,
+      "currentZone": "discount",
+      "ote": { "level62": 63066, "level79": 62947 }
+    }
+  }
+
+Node 8: Confluence Validator (IF / Condition Node)
+- Logic: Validates whether a minimum threshold of ICT criteria are met:
+  Example Long Setup Rules:
+  1. Market Trend == "bullish" (or recent bullish CHoCH)
+  2. In Killzone == true (e.g., NY AM session)
+  3. Liquidity Swept == Sell-Side Liquidity (SSL) recently swept
+  4. Location == Discount zone of dealing range
+  5. Entry Trigger == Price taps unmitigated Bullish FVG or Bullish Order Block
+- Routes:
+  - TRUE -> Downstream notification / webhook
+  - FALSE -> Discard / Log
+
+Node 9: Terminal / Webhook Output Node
+- Logic: Formats markdown notification or exchange order payload and fires
+  HTTP POST request to Telegram Bot, Discord Webhook, or Trading Broker API.
+
+--------------------------------------------------------------------------------
+4. TYPESCRIPT CODE IMPLEMENTATION TEMPLATES
+--------------------------------------------------------------------------------
+
+Below is the standard wrapper template for integrating these detectors into
+n8n custom node definitions:
+
+```typescript
+import {
+  IExecuteFunctions,
+  INodeExecutionData,
+  INodeType,
+  INodeTypeDescription,
+} from 'n8n-workflow';
+import { runIct } from '../src/ict/engine';
+import { defaultParams } from '../src/ict/params';
+
+export class IctAnalysisNode implements INodeType {
+  description: INodeTypeDescription = {
+    displayName: 'ICT Full Analysis Node',
+    name: 'ictAnalysisNode',
+    icon: 'fa:chart-line',
+    group: ['transform'],
+    version: 1,
+    description: 'Executes comprehensive ICT algorithm on incoming candlestick data',
+    defaults: { name: 'ICT Analyzer' },
+    inputs: ['main'],
+    outputs: ['main'],
+    properties: [
+      {
+        displayName: 'Timeframe',
+        name: 'timeframe',
+        type: 'options',
+        options: [
+          { name: '1m', value: '1m' },
+          { name: '5m', value: '5m' },
+          { name: '15m', value: '15m' },
+          { name: '1h', value: '1h' },
+          { name: '4h', value: '4h' },
+          { name: '1d', value: '1d' },
+        ],
+        default: '15m',
+      },
+      {
+        displayName: 'Max Active Zones Per Kind',
+        name: 'maxZones',
+        type: 'number',
+        default: 5,
+        description: 'Cap the number of unmitigated zones preserved in output',
+      },
+    ],
+  };
+
+  async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+    const items = this.getInputData();
+    const returnData: INodeExecutionData[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const candles = items[i].json.candles as any[];
+      const timeframe = this.getNodeParameter('timeframe', i) as any;
+      const maxZones = this.getNodeParameter('maxZones', i) as number;
+
+      const params = {
+        ...defaultParams(timeframe),
+        maxZonesPerKind: maxZones,
+      };
+
+      // Pure deterministic ICT engine call
+      const analysis = runIct(candles, timeframe, params);
+
+      returnData.push({
+        json: {
+          ...items[i].json,
+          ict: {
+            trend: analysis.trend,
+            dealingRange: analysis.range,
+            sessions: analysis.sessions,
+            activeFVGs: analysis.fvgs.filter((f) => f.status !== 'filled'),
+            activeOrderBlocks: analysis.orderBlocks.filter((b) => b.state === 'unmitigated'),
+            liquidityPools: analysis.pools.filter((p) => p.sweptAt === null),
+            recentSweeps: analysis.sweeps,
+            keyLevels: analysis.levels,
+          },
+        },
+      });
+    }
+
+    return [returnData];
+  }
+}
+```
+
+--------------------------------------------------------------------------------
+5. NEXT STEPS FOR PRODUCTION
+--------------------------------------------------------------------------------
+1. Deploy individual nodes (Structure, FVG, Liquidity, OB) if granular filtering
+   is required at each workflow step.
+2. Connect Redis or Postgres cache node before Market Data Ingest to cache historical
+   candles for multi-timeframe analysis (MTF confluence).
+3. Connect downstream risk-management node to calculate position size based on
+   Order Block invalidation level before firing orders.
+================================================================================
